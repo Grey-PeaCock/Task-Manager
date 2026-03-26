@@ -11,7 +11,7 @@ A personal productivity dashboard built with Django. Currently in early developm
 ## Tech Stack
 
 - **Backend:** Django 6.0.2
-- **Database:** SQLite (dev)
+- **Database:** PostgreSQL
 - **Frontend:** Bootstrap 5, D3.js
 - **Font:** Nunito Sans (Google Fonts)
 
@@ -22,8 +22,8 @@ A personal productivity dashboard built with Django. Currently in early developm
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/<your-username>/LifeOS.git
-cd LifeOS
+git clone https://github.com/Grey-PeaCock/Task-Manager.git
+cd Task-Manager
 ```
 
 ### 2. Create and activate a virtual environment
@@ -44,19 +44,38 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Apply migrations
+### 4. Setup PostgreSQL
+
+Install PostgreSQL from https://www.postgresql.org/download/ then create a database:
+
+```sql
+CREATE DATABASE lifeos;
+```
+
+### 5. Create a `.env` file in the project root
+
+```bash
+DJANGO_SECRET_KEY=your-secret-key-here
+DB_NAME=lifeos
+DB_USER=postgres
+DB_PASSWORD=yourpassword
+DB_HOST=localhost
+DB_PORT=5432
+```
+
+### 6. Apply migrations
 
 ```bash
 python manage.py migrate
 ```
 
-### 5. Create a superuser
+### 7. Create a superuser
 
 ```bash
 python manage.py createsuperuser
 ```
 
-### 6. Run the development server
+### 8. Run the development server
 
 ```bash
 python manage.py runserver
@@ -88,6 +107,7 @@ LifeOS/
 │   │   └── style.css
 │   ├── image/
 │   └── large_graph_data.json
+├── .env                # Your local environment variables (not committed)
 ├── manage.py
 └── requirements.txt
 ```
@@ -108,9 +128,9 @@ LifeOS/
 
 ## Notes
 
-- `SECRET_KEY` in `settings.py` is for development only. Use environment variables in production.
-- `DEBUG = True` — do not deploy with this setting enabled.
-- SQLite is used for development. Switch to PostgreSQL for production.
+- Never commit your `.env` file — it's in `.gitignore`
+- `DEBUG = True` — do not deploy with this setting enabled
+- Generate a new `SECRET_KEY` for production
 
 ---
 
