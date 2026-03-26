@@ -1,0 +1,1810 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Code Graph Explorer</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Outfit:wght@400;600;700;800&display=swap');
+
+        :root {
+            --bg: #07080f;
+            --surface: #0d0e1a;
+            --panel: #10111e;
+            --border: #1e2035;
+            --accent: #6c8fff;
+            --pink: #ff5f8f;
+            --purple: #a87ffb;
+            /* ← ADDED: Purple for parents */
+            --green: #4ade80;
+            /* ← ADDED: Green for leaves */
+            --teal: #2de0c4;
+            --text: #dde1f5;
+            --muted: #5a5f80;
+            --r: 32px;
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Outfit', sans-serif;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* subtle starfield bg */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                radial-gradient(1px 1px at 20% 30%, rgba(108, 143, 255, .25) 0%, transparent 100%),
+                radial-gradient(1px 1px at 75% 15%, rgba(168, 127, 251, .2) 0%, transparent 100%),
+                radial-gradient(1px 1px at 55% 70%, rgba(255, 95, 143, .15) 0%, transparent 100%),
+                radial-gradient(1px 1px at 90% 55%, rgba(74, 222, 128, .15) 0%, transparent 100%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ── HEADER ── */
+        header {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 10px 20px;
+            background: rgba(13, 14, 26, .92);
+            border-bottom: 1px solid var(--border);
+            backdrop-filter: blur(12px);
+            flex-shrink: 0;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 1rem;
+            font-weight: 800;
+            letter-spacing: -.03em;
+            background: linear-gradient(110deg, var(--accent), var(--teal));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo svg {
+            flex-shrink: 0
+        }
+
+        .hstats {
+            display: flex;
+            gap: 8px;
+            margin-left: auto;
+            align-items: center
+        }
+
+        .hbadge {
+            font-family: 'DM Mono', monospace;
+            font-size: .65rem;
+            padding: 3px 11px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            white-space: nowrap;
+        }
+
+        .hbadge b {
+            color: var(--teal);
+            font-weight: 500
+        }
+
+        /* ── LEGEND BAR ── */
+        .legend {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            padding: 5px 20px;
+            background: rgba(16, 17, 30, .8);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .li {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: .68rem;
+            color: var(--muted);
+            font-family: 'DM Mono', monospace
+        }
+
+        .ld {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%
+        }
+
+        .lhint {
+            margin-left: auto;
+            font-size: .65rem;
+            color: var(--muted);
+            font-family: 'DM Mono', monospace;
+            opacity: .5
+        }
+
+        /* ── WORKSPACE ── */
+        .ws {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+            position: relative;
+            z-index: 1
+        }
+
+        /* ── CANVAS ── */
+        #cw {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            cursor: grab
+        }
+
+        #cw:active {
+            cursor: grabbing
+        }
+
+        #gsvg {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            inset: 0
+        }
+
+        /* edges */
+        .edge {
+            fill: none;
+            stroke: rgba(108, 143, 255, .28);
+            stroke-width: 1.2;
+            marker-end: url(#arr);
+            opacity: 0;
+            transition: opacity .35s, stroke .2s, stroke-width .2s;
+        }
+
+        .edge.vis {
+            opacity: 1
+        }
+
+        .edge.hot {
+            stroke: var(--accent);
+            stroke-width: 2;
+            opacity: 1
+        }
+
+        .edge.dim {
+            opacity: .04
+        }
+
+        /* node groups */
+        .ng {
+            cursor: pointer;
+            transition: opacity .2s
+        }
+
+        .ng:focus {
+            outline: none
+        }
+
+        /* outer glow ring */
+        .ng .glow-ring {
+            fill: none;
+            stroke-width: 1.5;
+            opacity: .18;
+            transition: opacity .25s, stroke-width .25s, r .25s;
+        }
+
+        .ng:hover .glow-ring,
+        .ng:focus .glow-ring {
+            opacity: .55;
+            stroke-width: 2.5
+        }
+
+        .ng.sel .glow-ring {
+            opacity: .8;
+            stroke-width: 3
+        }
+
+        /* dashed expand ring */
+        .ng .dash-ring {
+            fill: none;
+            stroke-width: 1;
+            stroke-dasharray: 3.5 3;
+            opacity: 0;
+            transition: opacity .2s;
+        }
+
+        .ng:hover .dash-ring,
+        .ng:focus .dash-ring,
+        .ng.has-kids .dash-ring {
+            opacity: .3
+        }
+
+        .ng:hover .dash-ring,
+        .ng:focus .dash-ring {
+            opacity: .6
+        }
+
+        /* circle fill */
+        .ng .nc {
+            transition: filter .2s
+        }
+
+        .ng:hover .nc,
+        .ng:focus .nc {
+            filter: brightness(1.35)
+        }
+
+        .ng.sel .nc {
+            filter: brightness(1.5) drop-shadow(0 0 10px currentColor)
+        }
+
+        /* label */
+        .nl {
+            font-family: 'DM Mono', monospace;
+            font-size: 8.5px;
+            font-weight: 500;
+            fill: #fff;
+            pointer-events: none;
+            text-anchor: middle;
+            dominant-baseline: middle;
+        }
+
+        .nk {
+            font-family: 'DM Mono', monospace;
+            font-size: 6.5px;
+            fill: rgba(255, 255, 255, .38);
+            pointer-events: none;
+            text-anchor: middle;
+            dominant-baseline: middle;
+        }
+
+        /* expand chevron dot */
+        .xdot {
+            fill: rgba(255, 255, 255, .5);
+            pointer-events: none;
+            transition: opacity .2s;
+        }
+
+        /* ← MODIFIED: Node type colours to match Root/Parent/Leaf topology */
+        .t-root .nc {
+            fill: #1e1028;
+            stroke: var(--pink);
+            stroke-width: 2
+        }
+
+        .t-root .glow-ring {
+            stroke: var(--pink)
+        }
+
+        .t-root .dash-ring {
+            stroke: var(--pink)
+        }
+
+        .t-parent .nc {
+            fill: #150e28;
+            stroke: var(--purple);
+            stroke-width: 1.5
+        }
+
+        .t-parent .glow-ring {
+            stroke: var(--purple)
+        }
+
+        .t-parent .dash-ring {
+            stroke: var(--purple)
+        }
+
+        .t-leaf .nc {
+            fill: #071c1a;
+            stroke: var(--green);
+            stroke-width: 1.5
+        }
+
+        .t-leaf .glow-ring {
+            stroke: var(--green)
+        }
+
+        .t-leaf .dash-ring {
+            stroke: var(--green)
+        }
+
+        @keyframes popIn {
+            0% {
+                opacity: 0;
+                transform: translate(var(--tx, 0px), var(--ty, 0px)) scale(.4)
+            }
+
+            70% {
+                transform: translate(var(--tx, 0px), var(--ty, 0px)) scale(1.08)
+            }
+
+            100% {
+                opacity: 1;
+                transform: translate(var(--tx, 0px), var(--ty, 0px)) scale(1)
+            }
+        }
+
+        .ng.pop {
+            animation: popIn .28s cubic-bezier(.34, 1.56, .64, 1) forwards
+        }
+
+        /* ── DETAIL PANEL ── */
+        #dp {
+            width: 300px;
+            min-width: 0;
+            background: rgba(16, 17, 30, .96);
+            border-left: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: width .28s ease;
+            flex-shrink: 0;
+            backdrop-filter: blur(16px);
+        }
+
+        #dp.hidden {
+            width: 0;
+            border-left: none
+        }
+
+        .ph {
+            padding: 14px 16px 10px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .pbadge {
+            font-family: 'DM Mono', monospace;
+            font-size: .6rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 500;
+            letter-spacing: .06em;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        /* ← MODIFIED: Badge Colors */
+        .br {
+            background: rgba(255, 95, 143, .12);
+            color: var(--pink);
+            border: 1px solid rgba(255, 95, 143, .25)
+        }
+
+        .bp {
+            background: rgba(168, 127, 251, .16);
+            color: var(--purple);
+            border: 1px solid rgba(168, 127, 251, .3)
+        }
+
+        .bg {
+            background: rgba(74, 222, 128, .12);
+            color: var(--green);
+            border: 1px solid rgba(74, 222, 128, .25)
+        }
+
+        .ptitle {
+            font-size: .9rem;
+            font-weight: 700;
+            word-break: break-all;
+            line-height: 1.35
+        }
+
+        .pclose {
+            margin-left: auto;
+            background: none;
+            border: none;
+            color: var(--muted);
+            font-size: .95rem;
+            cursor: pointer;
+            padding: 2px 5px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        .pclose:hover {
+            color: var(--text);
+            background: var(--border)
+        }
+
+        .pb {
+            flex: 1;
+            overflow-y: auto;
+            padding: 14px 16px;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) transparent;
+        }
+
+        .pb::-webkit-scrollbar {
+            width: 3px
+        }
+
+        .pb::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 2px
+        }
+
+        .ds {
+            margin-bottom: 16px
+        }
+
+        .dl {
+            font-size: .6rem;
+            font-family: 'DM Mono', monospace;
+            color: var(--muted);
+            letter-spacing: .1em;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .dv {
+            font-size: .78rem;
+            color: var(--text);
+            line-height: 1.5
+        }
+
+        .dv.mono {
+            font-family: 'DM Mono', monospace;
+            font-size: .7rem;
+            color: var(--teal);
+            word-break: break-all
+        }
+
+        .cbar {
+            height: 3px;
+            background: var(--border);
+            border-radius: 2px;
+            margin-top: 5px;
+            overflow: hidden
+        }
+
+        .cfill {
+            height: 100%;
+            border-radius: 2px;
+            background: linear-gradient(90deg, var(--accent), var(--teal));
+            transition: width .5s ease;
+        }
+
+        .chip {
+            font-family: 'DM Mono', monospace;
+            font-size: .67rem;
+            padding: 4px 10px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--accent);
+            cursor: pointer;
+            transition: background .14s, border-color .14s;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .chip:hover {
+            background: var(--border);
+            border-color: var(--accent)
+        }
+
+        .chip.callee {
+            color: var(--teal)
+        }
+
+        .chip.callee:hover {
+            border-color: var(--teal)
+        }
+
+        .code-blk {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-family: 'DM Mono', monospace;
+            font-size: .66rem;
+            color: #8a9fc0;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 170px;
+            overflow-y: auto;
+            line-height: 1.65;
+        }
+
+        .code-blk::-webkit-scrollbar {
+            width: 3px
+        }
+
+        .code-blk::-webkit-scrollbar-thumb {
+            background: var(--border)
+        }
+
+        /* ── TOOLBAR ── */
+        #tb {
+            position: absolute;
+            bottom: 18px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 5px;
+            background: rgba(13, 14, 26, .92);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 7px 9px;
+            z-index: 20;
+            box-shadow: 0 8px 40px rgba(0, 0, 0, .6);
+            backdrop-filter: blur(12px);
+        }
+
+        .tb {
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            color: var(--muted);
+            font-size: .72rem;
+            padding: 5px 12px;
+            cursor: pointer;
+            font-family: 'DM Mono', monospace;
+            transition: all .13s;
+            white-space: nowrap;
+        }
+
+        .tb:hover {
+            color: var(--text);
+            border-color: var(--accent);
+            background: rgba(108, 143, 255, .08)
+        }
+
+        /* ── MINIMAP ── */
+        #mm {
+            position: absolute;
+            bottom: 18px;
+            right: 18px;
+            width: 160px;
+            height: 110px;
+            background: rgba(13, 14, 26, .88);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+            z-index: 20;
+            backdrop-filter: blur(8px);
+            cursor: default;
+        }
+
+        #mm canvas {
+            width: 100%;
+            height: 100%
+        }
+
+        .mm-label {
+            position: absolute;
+            top: 5px;
+            left: 8px;
+            font-family: 'DM Mono', monospace;
+            font-size: .58rem;
+            color: var(--muted);
+            pointer-events: none;
+        }
+
+        /* ── SEARCH ── */
+        #sw {
+            position: absolute;
+            top: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 20;
+        }
+
+        #srch {
+            background: rgba(13, 14, 26, .9);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-family: 'DM Mono', monospace;
+            font-size: .76rem;
+            padding: 6px 14px 6px 30px;
+            width: 230px;
+            outline: none;
+            transition: border-color .2s;
+            backdrop-filter: blur(8px);
+        }
+
+        #srch:focus {
+            border-color: var(--accent)
+        }
+
+        #srch::placeholder {
+            color: var(--muted)
+        }
+
+        #si {
+            position: absolute;
+            left: 9px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--muted);
+            pointer-events: none;
+            font-size: .82rem;
+        }
+
+        #src {
+            position: absolute;
+            right: -75px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-family: 'DM Mono', monospace;
+            font-size: .62rem;
+            color: var(--muted);
+            white-space: nowrap;
+        }
+
+        /* ── LOADING ── */
+        #ld {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            background: var(--bg);
+            z-index: 100;
+        }
+
+        .spin {
+            width: 34px;
+            height: 34px;
+            border: 2.5px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin .7s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg)
+            }
+        }
+
+        #ld p {
+            font-family: 'DM Mono', monospace;
+            font-size: .76rem;
+            color: var(--muted)
+        }
+
+        /* ── TOAST ── */
+        #toast {
+            position: absolute;
+            top: 54px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-8px);
+            background: rgba(13, 14, 26, .95);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            font-family: 'DM Mono', monospace;
+            font-size: .7rem;
+            padding: 5px 14px;
+            border-radius: 8px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .2s, transform .2s;
+            z-index: 50;
+            white-space: nowrap;
+        }
+
+        #toast.on {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0)
+        }
+
+        :focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px
+        }
+
+        /* ── CONTEXT MENU ── */
+        #ctx {
+            position: fixed;
+            z-index: 200;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 4px 0;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, .6);
+            display: none;
+            min-width: 160px;
+        }
+
+        #ctx.open {
+            display: block
+        }
+
+        .ci {
+            font-family: 'DM Mono', monospace;
+            font-size: .72rem;
+            color: var(--text);
+            padding: 7px 14px;
+            cursor: pointer;
+            transition: background .12s;
+        }
+
+        .ci:hover {
+            background: var(--border)
+        }
+
+        .ci.sep {
+            border-top: 1px solid var(--border);
+            margin-top: 3px;
+            padding-top: 10px
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+</head>
+
+<body>
+
+    <header>
+        <div class="logo">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round">
+                <defs>
+                    <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stop-color="#6c8fff" />
+                        <stop offset="100%" stop-color="#2de0c4" />
+                    </linearGradient>
+                </defs>
+                <circle cx="12" cy="12" r="3" stroke="url(#lg)" />
+                <circle cx="3" cy="5" r="1.5" stroke="url(#lg)" />
+                <circle cx="21" cy="5" r="1.5" stroke="url(#lg)" />
+                <circle cx="3" cy="19" r="1.5" stroke="url(#lg)" />
+                <circle cx="21" cy="19" r="1.5" stroke="url(#lg)" />
+                <line x1="4.2" y1="6" x2="10.5" y2="10.5" stroke="url(#lg)" />
+                <line x1="19.8" y1="6" x2="13.5" y2="10.5" stroke="url(#lg)" />
+                <line x1="4.2" y1="18" x2="10.5" y2="13.5" stroke="url(#lg)" />
+                <line x1="19.8" y1="18" x2="13.5" y2="13.5" stroke="url(#lg)" />
+            </svg>
+            Code Graph Explorer
+        </div>
+        <div class="hstats">
+            <div class="hbadge">nodes <b id="sn">—</b></div>
+            <div class="hbadge">edges <b id="se">—</b></div>
+            <div class="hbadge">roots <b id="sr">—</b></div>
+            <div class="hbadge">visible <b id="sv">—</b></div>
+        </div>
+    </header>
+
+    <div class="legend">
+        <div class="li">
+            <div class="ld" style="background:var(--pink)"></div>root entry
+        </div>
+        <div class="li">
+            <div class="ld" style="background:var(--purple)"></div>has children
+        </div>
+        <div class="li">
+            <div class="ld" style="background:var(--green)"></div>leaf node
+        </div>
+        <div class="li" style="gap:10px;color:var(--muted)">
+            <span>· ▸ has children</span>
+            <span>· click = expand/collapse</span>
+            <span>· right-click = options</span>
+        </div>
+        <div class="lhint">scroll to zoom · drag to pan</div>
+    </div>
+
+    <div class="ws">
+        <div id="cw">
+            <div id="ld">
+                <div class="spin"></div>
+                <p id="ldmsg">loading graph data…</p>
+            </div>
+
+            <div id="sw">
+                <span id="si">⌕</span>
+                <input id="srch" type="search" placeholder="search functions…" aria-label="Search nodes"
+                    autocomplete="off" />
+                <span id="src"></span>
+            </div>
+
+            <svg id="gsvg" role="img" aria-label="Function call graph">
+                <defs>
+                    <marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="2.5" orient="auto">
+                        <path d="M0,0 L0,5 L7,2.5 z" fill="rgba(108,143,255,.6)" />
+                    </marker>
+                    <marker id="arr-hot" markerWidth="7" markerHeight="7" refX="6" refY="2.5" orient="auto">
+                        <path d="M0,0 L0,5 L7,2.5 z" fill="#6c8fff" />
+                    </marker>
+                    <filter id="blur3">
+                        <feGaussianBlur stdDeviation="3" />
+                    </filter>
+                </defs>
+                <g id="el"></g>
+                <g id="nl"></g>
+            </svg>
+
+            <div id="tb">
+                <button class="tb" id="bfit">⊡ fit</button>
+                <button class="tb" id="bexp">⊕ expand all</button>
+                <button class="tb" id="bcol">⊖ collapse</button>
+                <button class="tb" id="bzi" aria-label="Zoom in">＋</button>
+                <button class="tb" id="bzo" aria-label="Zoom out">－</button>
+            </div>
+
+            <div id="mm">
+                <canvas id="mmc"></canvas>
+                <div class="mm-label">minimap</div>
+            </div>
+
+            <div id="toast" role="status" aria-live="polite"></div>
+        </div>
+
+        <aside id="dp" class="hidden" role="complementary" aria-label="Node details">
+            <div class="ph">
+                <span id="pbadge" class="pbadge bf">fn</span>
+                <div class="ptitle" id="ptitle">—</div>
+                <button class="pclose" id="pclose" aria-label="Close">✕</button>
+            </div>
+            <div class="pb">
+                <div class="ds">
+                    <div class="dl">purpose</div>
+                    <div class="dv" id="ppurpose">—</div>
+                </div>
+                <div class="ds">
+                    <div class="dl">file</div>
+                    <div class="dv mono" id="pfile">—</div>
+                </div>
+                <div class="ds">
+                    <div class="dl">confidence</div>
+                    <div class="dv mono" id="pconf">—</div>
+                    <div class="cbar">
+                        <div class="cfill" id="pcbar" style="width:0%"></div>
+                    </div>
+                </div>
+                <div class="ds">
+                    <div class="dl">called by (<span id="pnc">0</span>)</div>
+                    <div id="pcallers"></div>
+                </div>
+                <div class="ds">
+                    <div class="dl">calls (<span id="pnca">0</span>)</div>
+                    <div id="pcallees"></div>
+                </div>
+                <div class="ds" id="pcodesec">
+                    <div class="dl">source</div>
+                    <pre class="code-blk" id="pcode"></pre>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <div id="ctx" role="menu">
+        <div class="ci" id="ctx-expand">⊕ Expand children</div>
+        <div class="ci" id="ctx-collapse">⊖ Collapse children</div>
+        <div class="ci" id="ctx-focus">◎ Focus & centre</div>
+        <div class="ci sep" id="ctx-copy">⧉ Copy ID</div>
+    </div>
+
+    <script>
+        // ═══════════════════════════════════════════════════════════
+        //  CONFIG
+        // ═══════════════════════════════════════════════════════════
+        const DATA_URL = '/static/large_graph_data.json';
+        const R = 28;
+        const PHI = Math.PI * (3 - Math.sqrt(5));
+
+        const SPIRAL_SCALE = 4.8;
+        const CHILD_RADIUS = 100;
+        const CHILD_SPREAD = 68;
+
+        // ═══════════════════════════════════════════════════════════
+        //  STATE
+        // ═══════════════════════════════════════════════════════════
+        let allNodes = {};
+        let allEdges = [];
+        let childrenOf = {};
+        let parentsOf = {};
+        let rootIds = [];
+
+        let visibleIds = new Set();
+        let expandedIds = new Set();
+        let positions = {};
+        let selectedId = null;
+        let ctxNodeId = null;
+
+        let vx = 0, vy = 0, vs = 1;
+        let panning = false, px0 = 0, py0 = 0, pvx = 0, pvy = 0;
+
+        let simulation = null;
+        const SIM_R = R + 18;
+
+        // ← ADDED: Global search tracking arrays
+        let searchHits = [];
+        let searchIdx = -1;
+
+        const svg = document.getElementById('gsvg');
+        const el = document.getElementById('el');
+        const nl = document.getElementById('nl');
+        const dp = document.getElementById('dp');
+        const wrap = document.getElementById('cw');
+        const ctx = document.getElementById('ctx');
+        const mmc = document.getElementById('mmc');
+
+        // ═══════════════════════════════════════════════════════════
+        //  LOAD DATA
+        // ═══════════════════════════════════════════════════════════
+        async function load() {
+            try {
+                document.getElementById('ldmsg').textContent = 'fetching ' + DATA_URL + ' …';
+                const r = await fetch(DATA_URL);
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                const json = await r.json();
+
+                const fg = json.function_graph;
+                if (!fg) throw new Error('No "function_graph" key. Keys found: ' + Object.keys(json).join(', '));
+
+                fg.nodes.forEach(n => { allNodes[n.id] = n; });
+                allEdges = (fg.edges || []).filter(e => e.type === 'function_call');
+
+                allEdges.forEach(e => {
+                    if (!allNodes[e.source] || !allNodes[e.target]) return;
+                    (childrenOf[e.source] = childrenOf[e.source] || []).push(e.target);
+                    (parentsOf[e.target] = parentsOf[e.target] || []).push(e.source);
+                });
+
+                Object.keys(childrenOf).forEach(k => childrenOf[k] = [...new Set(childrenOf[k])]);
+                Object.keys(parentsOf).forEach(k => parentsOf[k] = [...new Set(parentsOf[k])]);
+
+                rootIds = Object.keys(allNodes).filter(id => !(parentsOf[id] && parentsOf[id].length));
+
+                document.getElementById('sn').textContent = fg.nodes.length;
+                document.getElementById('se').textContent = allEdges.length;
+                document.getElementById('sr').textContent = rootIds.length;
+
+                document.getElementById('ld').style.display = 'none';
+
+                rootIds.forEach(id => visibleIds.add(id));
+                layoutRoots();
+                renderAll();
+                setTimeout(fitView, 80);
+            } catch (e) {
+                document.getElementById('ld').innerHTML =
+                    `<p style="color:var(--pink);text-align:center">⚠ ${e.message}</p>
+       <p style="color:var(--muted);font-size:.7rem;margin-top:10px;font-family:'DM Mono',monospace;text-align:center">
+         Ensure <b>${DATA_URL}</b> is in your Django static folder<br>
+         and the server is running with static files enabled.
+       </p>`;
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        //  LAYOUT 
+        // ═══════════════════════════════════════════════════════════
+        function layoutRoots() {
+            rootIds.forEach((id, i) => {
+                if (positions[id]) return;
+                const angle = i * PHI;
+                const radius = SPIRAL_SCALE * Math.sqrt(i + 1) * (R * 2.2);
+                positions[id] = { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
+            });
+            kickSimulation();
+        }
+
+        function layoutChildren(parentId) {
+            const kids = (childrenOf[parentId] || []).filter(c => allNodes[c]);
+            if (!kids.length) return;
+            const pp = positions[parentId];
+            if (!pp) return;
+
+            let baseAngle = Math.PI / 2;
+            if (parentsOf[parentId] && parentsOf[parentId].length > 0) {
+                const gp = positions[parentsOf[parentId][0]];
+                if (gp) baseAngle = Math.atan2(pp.y - gp.y, pp.x - gp.x);
+            }
+
+            const n = kids.length;
+            const dist = CHILD_RADIUS;
+            const arc = Math.min(Math.PI * 1.3, (n - 1) * 0.55 + 0.4);
+            const start = baseAngle - arc / 2;
+            const step = n > 1 ? arc / (n - 1) : 0;
+
+            kids.forEach((id, i) => {
+                if (positions[id]) return;
+                const angle = n === 1 ? baseAngle : start + i * step;
+                positions[id] = {
+                    x: pp.x + Math.cos(angle) * dist,
+                    y: pp.y + Math.sin(angle) * dist
+                };
+            });
+            kickSimulation();
+        }
+
+        function kickSimulation() {
+            if (simulation) simulation.stop();
+
+            const simNodes = Array.from(visibleIds).map(id => {
+                const pos = positions[id] || { x: 0, y: 0 };
+                const isRoot = rootIds.includes(id);
+                return { id: id, x: pos.x, y: pos.y, fx: isRoot ? pos.x : null, fy: isRoot ? pos.y : null };
+            });
+
+            const nodeMap = new Map(simNodes.map(n => [n.id, n]));
+
+            const simEdges = allEdges
+                .filter(e => visibleIds.has(e.source) && visibleIds.has(e.target))
+                .map(e => ({ source: nodeMap.get(e.source), target: nodeMap.get(e.target) }));
+
+            simulation = d3.forceSimulation(simNodes)
+                .force('link', d3.forceLink(simEdges)
+                    .distance(d => {
+                        // root→child links slightly longer, deeper links tighter
+                        const sourceIsRoot = rootIds.includes(d.source.id);
+                        return sourceIsRoot ? 110 : 85;
+                    })
+                    .strength(0.7)        // was 0.3 — enforces distance strictly
+                )
+                .force('charge', d3.forceManyBody()
+                    .strength(-150)       // was -320 — less repulsion
+                    .distanceMin(R * 2)   // don't explode when nodes overlap
+                    .distanceMax(250)     // was 600 — repulsion dies off quickly
+                )
+                .force('collide', d3.forceCollide().radius(SIM_R).strength(1.0).iterations(4))  // was 0.85, 3
+                .force('center', d3.forceCenter(0, 0).strength(0.08))  // was 0.04 — pulls cluster inward
+
+            const alpha = visibleIds.size > 200 ? 0.8 : 0.5;
+            simulation.alpha(alpha).restart();
+        }
+
+        function updateNodePositions() {
+            nl.querySelectorAll('.ng').forEach(g => {
+                const id = g.dataset.id;
+                const pos = positions[id];
+                if (pos) {
+                    g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
+                    g.style.setProperty('--tx', `${pos.x}px`);
+                    g.style.setProperty('--ty', `${pos.y}px`);
+                }
+            });
+            renderEdges();
+            drawMinimap();
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        //  RENDER
+        // ═══════════════════════════════════════════════════════════
+        function renderAll() {
+            renderEdges();
+            renderNodes();
+            updateStats();
+            drawMinimap();
+        }
+
+        function renderEdges() {
+            const existingPaths = Array.from(el.children);
+            let pathIndex = 0;
+
+            allEdges.forEach(e => {
+                if (!visibleIds.has(e.source) || !visibleIds.has(e.target)) return;
+                const sp = positions[e.source], tp = positions[e.target];
+                if (!sp || !tp) return;
+
+                let p;
+                if (pathIndex < existingPaths.length) {
+                    p = existingPaths[pathIndex];
+                } else {
+                    p = svgEl('path');
+                    el.appendChild(p);
+                }
+                pathIndex++;
+
+                if (e.source === e.target) {
+                    p.setAttribute('d', `M${sp.x + 15},${sp.y - 15} C${sp.x + 60},${sp.y - 60} ${sp.x + 70},${sp.y + 20} ${sp.x + R + 4},${sp.y}`);
+                } else {
+                    const dx = tp.x - sp.x, dy = tp.y - sp.y;
+                    const len = Math.sqrt(dx * dx + dy * dy);
+                    const pull = Math.min(len * 0.4, 80);
+                    const nx = -dy / len, ny = dx / len;
+                    const cx1 = sp.x + dx * 0.3 + nx * pull * 0.2;
+                    const cy1 = sp.y + dy * 0.3 + ny * pull * 0.2;
+                    const cx2 = tp.x - dx * 0.3 + nx * pull * 0.2;
+                    const cy2 = tp.y - dy * 0.3 + ny * pull * 0.2;
+
+                    const angle = Math.atan2(tp.y - sp.y, tp.x - sp.x);
+                    const ex = tp.x - Math.cos(angle) * (R + 4);
+                    const ey = tp.y - Math.sin(angle) * (R + 4);
+
+                    p.setAttribute('d', `M${sp.x},${sp.y} C${cx1},${cy1} ${cx2},${cy2} ${ex},${ey}`);
+                }
+
+                p.setAttribute('class', 'edge vis');
+                p.dataset.s = e.source;
+                p.dataset.t = e.target;
+            });
+
+            while (pathIndex < existingPaths.length) {
+                existingPaths[pathIndex].setAttribute('class', 'edge');
+                existingPaths[pathIndex].removeAttribute('d');
+                pathIndex++;
+            }
+        }
+
+        function renderNodes() {
+            [...nl.querySelectorAll('.ng')].forEach(g => {
+                if (!visibleIds.has(g.dataset.id)) g.remove();
+            });
+            visibleIds.forEach(id => {
+                const existing = Array.from(nl.children).find(n => n.dataset.id === id);
+                if (existing) {
+                    updateNodePos(id, existing);
+                } else {
+                    buildNode(id, true);
+                }
+            });
+        }
+
+        // ← MODIFIED: Defines class purely by tree topology (Root/Parent/Leaf)
+        function nodeTypeClass(id) {
+            if (rootIds.includes(id)) return 't-root';
+            const hasKids = (childrenOf[id] || []).length > 0;
+            return hasKids ? 't-parent' : 't-leaf';
+        }
+
+        function buildNode(id, animate) {
+            const nd = allNodes[id];
+            const pos = positions[id];
+            if (!pos || !nd) return;
+
+            const hasKids = (childrenOf[id] || []).length > 0;
+            const tc = nodeTypeClass(id);
+
+            const g = svgEl('g');
+            g.setAttribute('class', `ng ${tc} ${hasKids ? 'has-kids' : ''} ${animate ? 'pop' : ''}`);
+            g.setAttribute('tabindex', '0');
+            g.setAttribute('role', 'button');
+            g.setAttribute('aria-label', `${nd.label}`);
+            g.dataset.id = id;
+            setPos(g, pos.x, pos.y);
+
+            const gr = svgEl('circle');
+            gr.setAttribute('class', 'glow-ring');
+            gr.setAttribute('cx', '0'); gr.setAttribute('cy', '0');
+            gr.setAttribute('r', R + 10);
+            g.appendChild(gr);
+
+            const dr = svgEl('circle');
+            dr.setAttribute('class', 'dash-ring');
+            dr.setAttribute('cx', '0'); dr.setAttribute('cy', '0');
+            dr.setAttribute('r', R + 5);
+            g.appendChild(dr);
+
+            const c = svgEl('circle');
+            c.setAttribute('class', 'nc');
+            c.setAttribute('cx', '0'); c.setAttribute('cy', '0');
+            c.setAttribute('r', R);
+            g.appendChild(c);
+
+            const lbl = svgEl('text');
+            lbl.setAttribute('class', 'nl');
+            lbl.setAttribute('x', '0');
+            lbl.setAttribute('y', hasKids ? '-4' : '0');
+            lbl.textContent = trunc(nd.label, 14);
+            g.appendChild(lbl);
+
+            const knd = svgEl('text');
+            knd.setAttribute('class', 'nk');
+            knd.setAttribute('x', '0');
+            knd.setAttribute('y', '8');
+            knd.textContent = nd.kind || 'fn';
+            knd.style.display = hasKids ? '' : 'none';
+            g.appendChild(knd);
+
+            if (hasKids) {
+                const dot = svgEl('circle');
+                dot.setAttribute('class', 'xdot');
+                dot.setAttribute('cx', '0');
+                dot.setAttribute('cy', R - 8);
+                dot.setAttribute('r', '3');
+                dot.dataset.role = 'xdot';
+                g.appendChild(dot);
+            }
+
+            g.addEventListener('click', e => { e.stopPropagation(); onNodeClick(id); });
+            g.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); openCtx(e, id); });
+            g.addEventListener('keydown', e => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNodeClick(id); }
+            });
+
+            nl.appendChild(g);
+        }
+
+        function updateNodePos(id, g) {
+            const pos = positions[id];
+            if (pos) setPos(g, pos.x, pos.y);
+        }
+
+        function setPos(g, x, y) {
+            g.setAttribute('transform', `translate(${x},${y})`);
+            g.style.setProperty('--tx', `${x}px`);
+            g.style.setProperty('--ty', `${y}px`);
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        //  INTERACTION
+        // ═══════════════════════════════════════════════════════════
+        function onNodeClick(id) {
+                const clickedIsRoot = rootIds.includes(id);
+
+                if (clickedIsRoot) {
+                    // Collapse ALL other roots and their entire subtrees immediately
+                    rootIds.forEach(r => {
+                        if (r !== id && expandedIds.has(r)) {
+                            hardCollapseRoot(r);
+                        }
+                    });
+
+                    // Toggle the clicked root
+                    if (expandedIds.has(id)) {
+                        hardCollapseRoot(id);
+                    } else {
+                        expandFrom(id);
+                    }
+                } else {
+                    // Non-root: normal toggle
+                    if (expandedIds.has(id)) {
+                        collapseFrom(id);
+                    } else {
+                        expandFrom(id);
+                    }
+                }
+
+                selectNode(id);
+            }
+
+        // Nuclear collapse: wipes an entire root's subtree from DOM + state, no safety checks needed
+            // because we're explicitly switching roots — orphaned shared nodes are acceptable tradeoff
+            function hardCollapseRoot(rootId) {
+                if (simulation) simulation.stop();
+
+                // Collect every descendant of this root (BFS)
+                const doomed = new Set();
+                const queue = [...(childrenOf[rootId] || [])];
+
+                while (queue.length) {
+                    const nid = queue.shift();
+                    if (!nid || rootIds.includes(nid) || doomed.has(nid)) continue;
+                    doomed.add(nid);
+                    (childrenOf[nid] || []).forEach(c => {
+                        if (!doomed.has(c) && !rootIds.includes(c)) queue.push(c);
+                    });
+                }
+
+                // Wipe from all state + DOM
+                doomed.forEach(c => {
+                    visibleIds.delete(c);
+                    expandedIds.delete(c);
+                    delete positions[c];
+                    const domEl = nl.querySelector(`.ng[data-id="${CSS.escape(c)}"]`);
+                    if (domEl) domEl.remove();
+                });
+
+                expandedIds.delete(rootId);
+                renderAll();
+            }
+
+        function expandFrom(id) {
+            const kids = childrenOf[id] || [];
+            expandedIds.add(id);
+            kids.forEach(c => { if (allNodes[c]) visibleIds.add(c); });
+            layoutChildren(id);
+            function cascadeLayout(nid) {
+                (childrenOf[nid] || []).forEach(c => {
+                    if (visibleIds.has(c) && expandedIds.has(c)) {
+                        layoutChildren(c);
+                        cascadeLayout(c);
+                    }
+                });
+            }
+            cascadeLayout(id);
+            if (!kids.length) toast('No outgoing calls from this node');
+            renderAll();
+        }
+
+        function collapseFrom(id) {
+                if (simulation) simulation.stop();
+
+                const doomed = new Set();
+
+                function gather(nid) {
+                    (childrenOf[nid] || []).forEach(c => {
+                        if (rootIds.includes(c)) return;
+
+                        // KEY FIX: exclude `id` itself from the "needed" check
+                        // because we're in the process of collapsing it
+                        const needed = (parentsOf[c] || []).some(p =>
+                            p !== nid && p !== id && expandedIds.has(p)
+                        );
+
+                        if (!needed) {
+                            doomed.add(c);
+                            gather(c);
+                        }
+                    });
+                }
+                gather(id);
+
+                doomed.forEach(c => {
+                    visibleIds.delete(c);
+                    expandedIds.delete(c);
+                    delete positions[c];
+                    const domEl = nl.querySelector(`.ng[data-id="${CSS.escape(c)}"]`);
+                    if (domEl) domEl.remove();
+                });
+
+                expandedIds.delete(id);
+                renderAll();
+            }
+
+        function selectNode(id) {
+            nl.querySelectorAll('.sel').forEach(g => g.classList.remove('sel'));
+            selectedId = id;
+
+            const nodeEl = Array.from(nl.children).find(n => n.dataset.id === id);
+            if (nodeEl) {
+                nodeEl.classList.add('sel');
+                nodeEl.parentNode.appendChild(nodeEl);
+            }
+
+            let treeEdges = new Set();
+            let visitedDown = new Set([id]);
+            let visitedUp = new Set([id]);
+
+            function traverseDown(nodeId) {
+                (childrenOf[nodeId] || []).forEach(childId => {
+                    if (visibleIds.has(childId)) {
+                        treeEdges.add(`${nodeId}->${childId}`);
+                        if (!visitedDown.has(childId)) {
+                            visitedDown.add(childId);
+                            traverseDown(childId);
+                        }
+                    }
+                });
+            }
+
+            function traverseUp(nodeId) {
+                (parentsOf[nodeId] || []).forEach(parentId => {
+                    if (visibleIds.has(parentId)) {
+                        treeEdges.add(`${parentId}->${nodeId}`);
+                        if (!visitedUp.has(parentId)) {
+                            visitedUp.add(parentId);
+                            traverseUp(parentId);
+                        }
+                    }
+                });
+            }
+
+            traverseDown(id);
+            traverseUp(id);
+
+            el.querySelectorAll('.edge').forEach(p => {
+                p.classList.remove('hot', 'dim');
+                let edgeKey = `${p.dataset.s}->${p.dataset.t}`;
+                if (treeEdges.has(edgeKey)) {
+                    p.classList.add('hot');
+                    p.setAttribute('marker-end', 'url(#arr-hot)');
+                } else {
+                    p.classList.add('dim');
+                    p.setAttribute('marker-end', 'url(#arr)');
+                }
+            });
+
+            showPanel(id);
+        }
+
+        function closePanel() {
+            dp.classList.add('hidden');
+            selectedId = null;
+            nl.querySelectorAll('.sel').forEach(g => g.classList.remove('sel'));
+            el.querySelectorAll('.edge').forEach(p => {
+                p.classList.remove('hot', 'dim');
+                p.setAttribute('marker-end', 'url(#arr)');
+            });
+        }
+
+        function showPanel(id) {
+            const nd = allNodes[id]; if (!nd) return;
+            dp.classList.remove('hidden');
+
+            document.getElementById('ptitle').textContent = nd.label;
+
+            // ← MODIFIED: Set Badge style dynamically based on new colors
+            const badge = document.getElementById('pbadge');
+            const isRoot = rootIds.includes(id);
+            const hasKids = (childrenOf[id] || []).length > 0;
+            badge.textContent = isRoot ? 'root' : (hasKids ? 'parent' : 'leaf');
+            badge.className = 'pbadge ' + (isRoot ? 'br' : (hasKids ? 'bp' : 'bg'));
+
+            document.getElementById('ppurpose').textContent = nd.purpose || 'No description.';
+
+            const fe = document.getElementById('pfile');
+            const parts = (nd.file || '').split('/');
+            fe.textContent = parts.slice(-2).join('/') || '—';
+            fe.title = nd.file || '';
+
+            const conf = nd.confidence ?? 0;
+            document.getElementById('pconf').textContent = (conf * 100).toFixed(0) + '%';
+            document.getElementById('pcbar').style.width = (conf * 100) + '%';
+
+            const callers = [...new Set(parentsOf[id] || [])].filter(p => allNodes[p]);
+            document.getElementById('pnc').textContent = callers.length;
+            const ce = document.getElementById('pcallers');
+            ce.innerHTML = '';
+            if (callers.length) callers.forEach(c => ce.appendChild(chip(allNodes[c]?.label || c, false, () => jumpTo(c))));
+            else ce.innerHTML = '<span style="color:var(--muted);font-size:.68rem;font-family:\'DM Mono\'">none — entry point</span>';
+
+            const callees = [...new Set(childrenOf[id] || [])].filter(c => allNodes[c]);
+            document.getElementById('pnca').textContent = callees.length;
+            const cae = document.getElementById('pcallees');
+            cae.innerHTML = '';
+            if (callees.length) callees.forEach(c => cae.appendChild(chip(allNodes[c]?.label || c, true, () => jumpTo(c))));
+            else cae.innerHTML = '<span style="color:var(--muted);font-size:.68rem;font-family:\'DM Mono\'">none — leaf node</span>';
+
+            const cs = document.getElementById('pcodesec');
+            if (nd.code) { document.getElementById('pcode').textContent = nd.code; cs.style.display = ''; }
+            else cs.style.display = 'none';
+        }
+
+        function chip(label, isCallee, onclick) {
+            const d = document.createElement('div');
+            d.className = 'chip' + (isCallee ? ' callee' : '');
+            d.textContent = label; d.title = label;
+            d.setAttribute('role', 'button'); d.setAttribute('tabindex', '0');
+            d.addEventListener('click', onclick);
+            d.addEventListener('keydown', e => { if (e.key === 'Enter') onclick(); });
+            return d;
+        }
+
+        function jumpTo(id) {
+            if (!visibleIds.has(id)) { ensureVisible(id); renderAll(); }
+            selectNode(id);
+            centerOn(id);
+        }
+
+        function ensureVisible(id) {
+            if (visibleIds.has(id)) return;
+            const ps = parentsOf[id] || [];
+            if (!ps.length) { visibleIds.add(id); layoutRoots(); return; }
+            const p = ps[0];
+            ensureVisible(p);
+            expandedIds.add(p);
+            (childrenOf[p] || []).forEach(c => { if (allNodes[c]) visibleIds.add(c); });
+            layoutChildren(p);
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        //  CONTEXT MENU
+        // ═══════════════════════════════════════════════════════════
+        function openCtx(e, id) {
+            ctxNodeId = id;
+            ctx.style.left = e.clientX + 'px';
+            ctx.style.top = e.clientY + 'px';
+            ctx.classList.add('open');
+            selectNode(id);
+        }
+        document.addEventListener('click', () => ctx.classList.remove('open'));
+
+        document.getElementById('ctx-expand').addEventListener('click', () => {
+            if (ctxNodeId) expandFrom(ctxNodeId);
+        });
+        document.getElementById('ctx-collapse').addEventListener('click', () => {
+            if (ctxNodeId && expandedIds.has(ctxNodeId)) collapseFrom(ctxNodeId);
+        });
+        document.getElementById('ctx-focus').addEventListener('click', () => {
+            if (ctxNodeId) { selectNode(ctxNodeId); centerOn(ctxNodeId); }
+        });
+        document.getElementById('ctx-copy').addEventListener('click', () => {
+            if (ctxNodeId) navigator.clipboard?.writeText(ctxNodeId);
+            toast('ID copied to clipboard');
+        });
+
+        // ═══════════════════════════════════════════════════════════
+        //  PAN / ZOOM
+        // ═══════════════════════════════════════════════════════════
+        let isRenderingFrame = false;
+
+        function applyT() {
+            if (!isRenderingFrame) {
+                requestAnimationFrame(() => {
+                    const t = `translate(${vx},${vy}) scale(${vs})`;
+                    el.setAttribute('transform', t);
+                    nl.setAttribute('transform', t);
+                    drawMinimap();
+                    isRenderingFrame = false;
+                });
+                isRenderingFrame = true;
+            }
+        }
+
+        function fitView() {
+            const pts = Object.values(positions);
+            if (!pts.length) return;
+            const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+            const pad = 80;
+            const minX = Math.min(...xs) - R - pad, maxX = Math.max(...xs) + R + pad;
+            const minY = Math.min(...ys) - R - pad, maxY = Math.max(...ys) + R + pad;
+            const gW = maxX - minX, gH = maxY - minY;
+            const cW = wrap.clientWidth || 800, cH = wrap.clientHeight || 600;
+            vs = Math.min(cW / gW, cH / gH, 1.6);
+            vx = cW / 2 - (minX + gW / 2) * vs;
+            vy = cH / 2 - (minY + gH / 2) * vs;
+            applyT();
+        }
+
+        function centerOn(id) {
+            const pos = positions[id]; if (!pos) return;
+            const cW = wrap.clientWidth || 800, cH = wrap.clientHeight || 600;
+            vx = cW / 2 - pos.x * vs;
+            vy = cH / 2 - pos.y * vs;
+            applyT();
+        }
+
+        wrap.addEventListener('mousedown', e => {
+            if (e.target.closest('.ng') || e.target.closest('#tb') || e.target.closest('#sw') || e.target.closest('#mm')) return;
+            panning = true; px0 = e.clientX; py0 = e.clientY; pvx = vx; pvy = vy;
+        });
+        window.addEventListener('mousemove', e => {
+            if (!panning) return;
+            vx = pvx + (e.clientX - px0); vy = pvy + (e.clientY - py0);
+            applyT();
+        });
+        window.addEventListener('mouseup', () => { panning = false; });
+
+        wrap.addEventListener('wheel', e => {
+            e.preventDefault();
+            const rect = wrap.getBoundingClientRect();
+            const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+            const f = e.deltaY < 0 ? 1.1 : 0.91;
+            const ns = Math.max(0.05, Math.min(5, vs * f));
+            vx = mx - (mx - vx) * (ns / vs);
+            vy = my - (my - vy) * (ns / vs);
+            vs = ns; applyT();
+        }, { passive: false });
+
+        let tx = 0, ty = 0;
+        wrap.addEventListener('touchstart', e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; });
+        wrap.addEventListener('touchmove', e => {
+            e.preventDefault();
+            vx += e.touches[0].clientX - tx; vy += e.touches[0].clientY - ty;
+            tx = e.touches[0].clientX; ty = e.touches[0].clientY;
+            applyT();
+        }, { passive: false });
+
+        // ═══════════════════════════════════════════════════════════
+        //  TOOLBAR
+        // ═══════════════════════════════════════════════════════════
+        document.getElementById('bfit').addEventListener('click', fitView);
+        document.getElementById('bzi').addEventListener('click', () => { vs = Math.min(5, vs * 1.2); applyT(); });
+        document.getElementById('bzo').addEventListener('click', () => { vs = Math.max(0.05, vs / 1.2); applyT(); });
+
+        document.getElementById('bexp').addEventListener('click', () => {
+            Object.keys(allNodes).forEach(id => {
+                visibleIds.add(id); expandedIds.add(id);
+            });
+            layoutRoots();
+            const q = [...rootIds];
+            const visited = new Set(rootIds);
+            while (q.length) {
+                const id = q.shift();
+                layoutChildren(id);
+                (childrenOf[id] || []).forEach(c => {
+                    if (!visited.has(c)) { visited.add(c); q.push(c); }
+                });
+            }
+            renderAll();
+            setTimeout(fitView, 80);
+            toast('All nodes expanded');
+        });
+
+        document.getElementById('bcol').addEventListener('click', () => {
+            collapseToRoots();
+            toast('Collapsed to root nodes');
+        });
+
+        svg.addEventListener('click', e => {
+            const dx = e.clientX - px0;
+            const dy = e.clientY - py0;
+            const dragDistance = Math.sqrt(dx * dx + dy * dy);
+
+            if (dragDistance > 5) return;
+
+            if (!e.target.closest('.ng')) {
+                collapseToRoots();
+            }
+        });
+
+        document.getElementById('pclose').addEventListener('click', closePanel);
+
+        // ═══════════════════════════════════════════════════════════
+        //  SEARCH - ← MODIFIED: Global search & cycle-on-enter logic
+        // ═══════════════════════════════════════════════════════════
+        document.getElementById('srch').addEventListener('input', function () {
+            const q = this.value.toLowerCase().trim();
+            searchHits = [];
+            searchIdx = -1;
+
+            if (!q) {
+                // Remove visual dimming when input is empty
+                nl.querySelectorAll('.ng').forEach(g => g.style.opacity = '1');
+                document.getElementById('src').textContent = '';
+                return;
+            }
+
+            // Look through ALL loaded data (not just visible nodes)
+            Object.keys(allNodes).forEach(id => {
+                const nd = allNodes[id];
+                const hit = (nd?.label || '').toLowerCase().includes(q)
+                    || (nd?.purpose || '').toLowerCase().includes(q)
+                    || (nd?.kind || '').toLowerCase().includes(q);
+                if (hit) searchHits.push(id);
+            });
+
+            // Dim any visible nodes that are NOT a match to provide immediate feedback
+            nl.querySelectorAll('.ng').forEach(g => {
+                g.style.opacity = searchHits.includes(g.dataset.id) ? '1' : '0.07';
+            });
+
+            document.getElementById('src').textContent = searchHits.length ? `${searchHits.length} hit${searchHits.length > 1 ? 's' : ''} ↵` : '0 hits';
+        });
+
+        // The "Find Next & Collapse Noise" command
+        document.getElementById('srch').addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' && searchHits.length > 0) {
+                    e.preventDefault();
+
+                    // 1. Cycle through results
+                    searchIdx = (searchIdx + 1) % searchHits.length;
+                    const targetId = searchHits[searchIdx];
+
+                    // 2. Update counter UI
+                    document.getElementById('src').textContent = `${searchIdx + 1} of ${searchHits.length} ↵`;
+
+                    // 3. COLLAPSE EVERYTHING first to observe only this result's path
+                    if (simulation) simulation.stop();
+                    visibleIds = new Set(rootIds);
+                    expandedIds.clear();
+                    Object.keys(positions).forEach(id => {
+                        if (!rootIds.includes(id)) delete positions[id];
+                    });
+
+                    // 4. Trace and force expand the path to the result
+                    ensureVisible(targetId);
+
+                    // 5. Redraw everything
+                    renderAll();
+                    kickSimulation();
+
+                    // 6. Focus & Highlight
+                    setTimeout(() => {
+                        selectNode(targetId);
+                        centerOn(targetId);
+                    }, 150); // Increased timeout slightly to allow D3 to place nodes
+                }
+            });
+
+        // ═══════════════════════════════════════════════════════════
+        //  MINIMAP
+        // ═══════════════════════════════════════════════════════════
+        function drawMinimap() {
+            const pts = Object.values(positions);
+            if (!pts.length) return;
+            const W = mmc.offsetWidth || 160, H = mmc.offsetHeight || 110;
+            mmc.width = W * 2; mmc.height = H * 2;
+            const ct = mmc.getContext('2d');
+            ct.scale(2, 2);
+            ct.clearRect(0, 0, W, H);
+
+            const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+            const minX = Math.min(...xs), maxX = Math.max(...xs);
+            const minY = Math.min(...ys), maxY = Math.max(...ys);
+            const gW = maxX - minX || 1, gH = maxY - minY || 1;
+            const pad = 8;
+            const sx = (W - pad * 2) / gW, sy = (H - pad * 2) / gH;
+            const sc = Math.min(sx, sy);
+            const ox = pad + (W - pad * 2 - (gW * sc)) / 2;
+            const oy = pad + (H - pad * 2 - (gH * sc)) / 2;
+
+            function mx(x) { return ox + (x - minX) * sc; }
+            function my(y) { return oy + (y - minY) * sc; }
+
+            ct.strokeStyle = 'rgba(108,143,255,.25)'; ct.lineWidth = .5;
+            allEdges.forEach(e => {
+                if (!positions[e.source] || !positions[e.target]) return;
+                ct.beginPath();
+                ct.moveTo(mx(positions[e.source].x), my(positions[e.source].y));
+                ct.lineTo(mx(positions[e.target].x), my(positions[e.target].y));
+                ct.stroke();
+            });
+
+            // ← MODIFIED: Minimap dots use the new colors
+            visibleIds.forEach(id => {
+                const pos = positions[id]; if (!pos) return;
+                const isRoot = rootIds.includes(id);
+                const hasKids = (childrenOf[id] || []).length > 0;
+                ct.beginPath();
+                ct.arc(mx(pos.x), my(pos.y), isRoot ? 3 : 1.8, 0, Math.PI * 2);
+                ct.fillStyle = isRoot ? '#ff5f8f' : hasKids ? '#a87ffb' : '#4ade80';
+                ct.fill();
+            });
+
+            const cW = wrap.clientWidth || 800, cH = wrap.clientHeight || 600;
+            const vrX = (-vx / vs - minX) * sc + ox;
+            const vrY = (-vy / vs - minY) * sc + oy;
+            const vrW = (cW / vs) * sc;
+            const vrH = (cH / vs) * sc;
+            ct.strokeStyle = 'rgba(255,255,255,.3)'; ct.lineWidth = 1;
+            ct.strokeRect(vrX, vrY, vrW, vrH);
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        //  STATS BAR
+        // ═══════════════════════════════════════════════════════════
+        function updateStats() {
+            document.getElementById('sv').textContent = visibleIds.size;
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        //  UTIL
+        // ═══════════════════════════════════════════════════════════
+        function svgEl(tag) { return document.createElementNS('http://www.w3.org/2000/svg', tag); }
+        function trunc(s, n) { return s && s.length > n ? s.slice(0, n - 1) + '…' : s; }
+
+        let toastT;
+        function toast(msg) {
+            const e = document.getElementById('toast');
+            e.textContent = msg; e.classList.add('on');
+            clearTimeout(toastT);
+            toastT = setTimeout(() => e.classList.remove('on'), 2400);
+        }
+
+        function collapseToRoots() {
+            if (simulation) simulation.stop();
+
+            visibleIds = new Set(rootIds);
+            expandedIds.clear();
+            Object.keys(positions).forEach(id => {
+                if (!rootIds.includes(id)) delete positions[id];
+            });
+            nl.innerHTML = '';
+            el.innerHTML = '';
+
+            closePanel();
+            renderAll();
+            setTimeout(fitView, 60);
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        //  BOOT
+        // ═══════════════════════════════════════════════════════════
+        load();
+    </script>
+</body>
+
+</html>

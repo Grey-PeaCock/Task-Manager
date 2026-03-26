@@ -1,0 +1,188 @@
+body {
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    background:
+        linear-gradient(135deg,
+            rgba(30, 60, 114, 0.8) 0%,
+            rgba(42, 82, 152, 0.7) 50%,
+            rgba(126, 34, 206, 0.8) 100%),
+        url('bg.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+}
+
+.page-wrapper {
+    background: transparent;
+}
+
+/* Animated glow behind login card */
+.login-card-wrapper {
+    position: relative;
+    width: 65%;
+    max-width: 1100px;
+}
+
+/* Background glow effect - positioned behind */
+.login-card-wrapper::before {
+    content: '';
+    position: absolute;
+    inset: -40px;
+    /* Controls how far the glow extends */
+    border-radius: 18px;
+    background: linear-gradient(45deg,
+            #667eea,
+            #764ba2,
+            #f093fb,
+            #4facfe,
+            #667eea);
+    background-size: 400% 400%;
+    animation: gradientShift 6s ease infinite;
+    opacity: 0.4;
+    /* Controls glow intensity */
+    filter: blur(40px);
+    /* Creates the glow effect */
+    z-index: -1;
+    /* Behind the card */
+}
+
+@keyframes gradientShift {
+
+    0%,
+    100% {
+        background-position: 0% 50%;
+    }
+
+    25% {
+        background-position: 100% 50%;
+    }
+
+    50% {
+        background-position: 100% 100%;
+    }
+
+    75% {
+        background-position: 0% 100%;
+    }
+}
+
+/* Login card */
+.login-card {
+    position: relative;
+    display: grid;
+    grid-template-columns: 45% 55%;
+    width: 100%;
+    min-height: 550px;
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-radius: 16px;
+    overflow: hidden;
+    z-index: 1;
+}
+
+.login-details {
+    padding: 3rem 2.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.login-details form {
+    max-width: 300px;
+    width: 100%;
+}
+
+.login-img {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+}
+
+.login-illustration {
+    width: 100%;
+    height: auto;
+    max-height: 500px;
+    object-fit: contain;
+}
+
+/* Input styling */
+.login-details input {
+    width: 100%;
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+}
+
+.login-details input:focus {
+    outline: none;
+    background: rgba(255, 255, 255, 1);
+    border-color: rgba(126, 34, 206, 0.5);
+}
+
+.login-details button {
+    width: 100%;
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    border-radius: 8px;
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.login-details button:hover {
+    background: rgba(255, 255, 255, 0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.links {
+    margin-top: 1.5rem;
+    display: flex;
+    gap: 1.5rem;
+}
+
+.links a {
+    color: white;
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: opacity 0.3s ease;
+}
+
+.links a:hover {
+    opacity: 0.8;
+    text-decoration: underline;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .login-card-wrapper {
+        width: 90%;
+    }
+
+    .login-card {
+        grid-template-columns: 1fr;
+    }
+
+    .login-img {
+        order: -1;
+        padding: 1rem;
+        max-height: 300px;
+    }
+
+    .login-illustration {
+        max-height: 250px;
+    }
+
+    .login-details {
+        padding: 2rem 1.5rem;
+    }
+}

@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Django
+db.sqlite3
+*.log
+local_settings.py
+media/
+
+# Environment variables
+.env
+.env.*
+
+# Static collected (production)
+staticfiles/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter (if any notebooks crept in)
+.ipynb_checkpoints/
+*.ipynb
